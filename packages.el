@@ -15,6 +15,7 @@
 ;; * org-mode
 ;; load this first before anything else to avoid mixed installations
 (use-package org
+  :straight t
   :ensure t
   :pin gnu
   :mode ("\\.org\\'" . org-mode)
@@ -41,9 +42,11 @@
 (use-package aggressive-indent
   :config (add-hook 'emacs-lisp-mode-hook #'aggressive-indent-mode))
 
-(use-package auto-complete
-  :diminish auto-complete-mode
-  :config (ac-config-default))
+;; [2023-12-11 Mon] I don't think we use this for anything. commenting out for now.
+;; see issue #487
+;; (use-package auto-complete
+;;   :diminish auto-complete-mode
+;;   :config (ac-config-default))
 
 (use-package avy)
 
@@ -55,8 +58,7 @@
 
 (use-package bookmark
   :init
-  (setq bookmark-default-file (expand-file-name "user/bookmarks" scimax-dir)
-	bookmark-save-flag 1))
+  (setq bookmark-save-flag 1))
 
 
 (use-package button-lock)
@@ -78,11 +80,10 @@
 	'counsel-grep-or-swiper
       'swiper)))
 
-
 (use-package multiple-cursors
   :config
+  ;; mc/cmds-to-run-once is defined in `lispy'.
   (add-to-list 'mc/cmds-to-run-once 'swiper-mc))
-
 
 (use-package counsel
   :init
@@ -133,9 +134,9 @@
 (use-package elfeed)
 
 ;; Python editing mode
-(use-package elpy
-  :config
-  (elpy-enable))
+;; (use-package elpy			;
+;;   :config
+;;   (elpy-enable))
 
 (use-package esup)
 
@@ -161,15 +162,15 @@
   :config
   (google-this-mode 1))
 
-(use-package help-fns+
-  :load-path scimax-dir)
+;; (use-package help-fns+
+;;   :load-path scimax-dir)
 
 ;; Functions for working with hash tables
 (use-package ht)
 
 (use-package htmlize)
 
-(use-package hy-mode)
+;; (use-package hy-mode)
 
 (use-package hydra
   :init
@@ -180,9 +181,9 @@
 
 (use-package ivy-hydra)
 
-(use-package jedi)
+;; (use-package jedi)
 
-(use-package jedi-direx)
+;; (use-package jedi-direx)
 
 ;; Superior lisp editing
 (use-package lispy
@@ -200,41 +201,20 @@
   ("<f5>" . magit-status)
   ("C-c v t" . magit-status))
 
-(use-package magithub
-  :after magit)
+(use-package move-text
+  :init (move-text-default-bindings))
 
 ;; Templating system
 ;; https://github.com/Wilfred/mustache.el
 (use-package mustache)
 
-;; this is a git submodule
-(if (executable-find "jupyter")
-    (use-package ob-ipython
-      :ensure nil
-      :load-path (lambda () (expand-file-name "ob-ipython-upstream" scimax-dir))
-      :init (add-to-list 'load-path (expand-file-name "ob-ipython-upstream" scimax-dir))
-      (require 'ob-ipython))
-  (message "jupyter was not found on your path. ob-ipython was not loaded."))
-
-(use-package scimax-org-babel-ipython-upstream
-  :ensure nil
-  :load-path scimax-dir)
-
-;; (use-package scimax-jupyter
-;;   :load-path scimax-dir)
+(when (executable-find "jupyter")
+  (use-package jupyter)
+  (use-package scimax-jupyter :load-path scimax-dir))
 
 (use-package ov)
 
 (use-package pdf-tools)
-
-(use-package org-mime
-  :ensure nil
-  :load-path (lambda () (expand-file-name "org-mime" scimax-dir))
-  :init (setq org-mime-up-subtree-heading 'org-back-to-heading
-	      org-mime-export-options '(:section-numbers nil
-							 :with-author nil
-							 :with-toc nil
-							 :with-latex dvipng)))
 
 (use-package parsebib)
 (use-package helm)
@@ -242,13 +222,8 @@
 (use-package ivy-bibtex)
 (use-package citeproc)
 
-;; this is in a git submodule
 (use-package org-ref
-  :ensure nil
-  :load-path (lambda () (expand-file-name "org-ref" scimax-dir))
   :init
-  (add-to-list 'load-path
-	       (expand-file-name "org-ref" scimax-dir))
   (require 'bibtex)
   (setq bibtex-autokey-year-length 4
 	bibtex-autokey-name-year-separator "-"
@@ -259,36 +234,28 @@
 	bibtex-autokey-titleword-length 5)
   (define-key bibtex-mode-map (kbd "H-b") 'org-ref-bibtex-hydra/body)
   (define-key org-mode-map (kbd "C-c ]") 'org-ref-insert-link)
-  (define-key org-mode-map (kbd "s-[") 'org-ref-insert-link-hydra/body)
-  (require 'org-ref-ivy)
-  (require 'org-ref-arxiv)
-  (require 'org-ref-scopus)
-  (require 'org-ref-wos))
+  (define-key org-mode-map (kbd "s-[") 'org-ref-insert-link-hydra/body))
 
 
 (use-package org-ref-ivy
-  :ensure nil
-  :load-path (lambda () (expand-file-name "org-ref" scimax-dir))
+  :load-path (lambda () (file-name-directory (locate-library "org-ref")))
   :init (setq org-ref-insert-link-function 'org-ref-insert-link-hydra/body
 	      org-ref-insert-cite-function 'org-ref-cite-insert-ivy
 	      org-ref-insert-label-function 'org-ref-insert-label-link
 	      org-ref-insert-ref-function 'org-ref-insert-ref-link
 	      org-ref-cite-onclick-function (lambda (_) (org-ref-citation-hydra/body))))
 
+(use-package ox-pandoc)
 
 ;; https://github.com/bbatsov/projectile
-(use-package projectile
-  :init (setq projectile-cache-file
-	      (expand-file-name "user/projectile.cache" scimax-dir)
-	      projectile-known-projects-file
-	      (expand-file-name "user/projectile-bookmarks.eld" scimax-dir))
+(use-package projectile 
   :bind
   ("C-c pp" . counsel-projectile-switch-project)
-  ("C-c pn" . counsel-projectile-switch-project-by-name)
   ("C-c pb" . counsel-projectile-switch-to-buffer)
   ("C-c pf" . counsel-projectile-find-file)
   ("C-c pd" . counsel-projectile-find-dir)
   ("C-c pg" . counsel-projectile-grep)
+  ("C-c ph" . ivy-org-jump-to-project-headline)
   ("C-c pG" . counsel-projectile-git-grep)
   ("C-c pa" . counsel-projectile-ag)
   ("C-c pr" . counsel-projectile-rg)
@@ -369,14 +336,17 @@
 
 (use-package ox-clip
   :ensure nil
-  :load-path (lambda () (expand-file-name "ox-clip" scimax-dir))
   :bind ("H-k" . ox-clip-formatted-copy))
 
-(use-package scimax-contacts
+;; (use-package scimax-contacts
+;;   :ensure nil
+;;   :load-path scimax-dir)
+
+(use-package scimax-email
   :ensure nil
   :load-path scimax-dir)
 
-(use-package scimax-email
+(use-package scimax-projectile
   :ensure nil
   :load-path scimax-dir)
 
@@ -417,9 +387,9 @@
   :ensure nil
   :load-path scimax-dir)
 
-(use-package scimax-lob
-  :ensure nil
-  :load-path scimax-dir)
+;; (use-package scimax-lob
+;;   :ensure nil
+;;   :load-path scimax-dir)
 
 (use-package scimax-yas
   :ensure nil
@@ -446,21 +416,9 @@
   :ensure nil
   :load-path scimax-dir)
 
-(use-package kitchingroup
-  :ensure nil
-  :load-path (lambda () (expand-file-name "kitchingroup" scimax-dir)))
-
 (let ((enable-local-variables nil))
   (org-babel-load-file (expand-file-name "scimax-editmarks.org" scimax-dir)))
 
-;; * User packages
-
-;; We load one file: user.el
-
-(when (and
-       scimax-load-user-dir
-       (file-exists-p (expand-file-name "user.el" scimax-user-dir)))
-  (load (expand-file-name "user.el" scimax-user-dir)))
 
 (add-to-list 'Info-directory-list scimax-dir)
 

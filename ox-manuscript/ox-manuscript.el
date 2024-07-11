@@ -43,7 +43,7 @@
   "Customization group for ox-manuscript.")
 
 (defcustom ox-manuscript-latex-command
-  "pdflatex"
+  "lualatex"
   "Command to run latex."
   :group 'ox-manuscript)
 
@@ -51,6 +51,13 @@
   "bibtex8"
   "Command to run bibtex."
   :group 'ox-manuscript)
+
+(defcustom ox-manuscript-page-numbering
+  ""
+  "Command to influence page-numbering.
+Set it to \"\\pagenumbering{gobble}\n\" if you want no page numbers."
+  :group 'ox-manuscript
+  :type 'string)
 
 (defcustom ox-manuscript-interactive-build
   nil
@@ -61,7 +68,9 @@ if you should continue to the next step."
   :group 'ox-manuscript)
 
 (defcustom ox-manuscript-user-template-dir
-  (file-name-as-directory (expand-file-name "ox-manuscript-templates" scimax-user-dir))
+  (file-name-as-directory
+   (expand-file-name
+    (locate-user-emacs-file "ox-manuscript-templates")))
   "Directory for user-defined ox-manuscript templates."
   :group 'ox-manuscript)
 
@@ -203,6 +212,37 @@ grestore
 ;; ** Wiley
 ;; I have not been able to find a LaTeX package for Wiley
 
+;; ** customized article. better margins
+(add-to-list 'org-latex-classes
+	     '("cmu-article"                          ;class-name
+	       "\\documentclass{article}
+\\usepackage[top=1in, bottom=1.in, left=1in, right=1in]{geometry}
+ [PACKAGES]
+ [EXTRA]" ;;header-string
+	       ("\\section{%s}" . "\\section*{%s}")
+	       ("\\subsection{%s}" . "\\subsection*a{%s}")
+	       ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+	       ("\\paragraph{%s}" . "\\paragraph*{%s}")
+	       ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
+
+;; ** NSF proposal - with Times New Roman
+(add-to-list 'org-latex-classes
+	     '("NSF"			;class-name
+	       "\\documentclass[12pt]{article}
+\\usepackage{fontspec}
+\\setmainfont{Times New Roman}
+\\usepackage[top=1in, bottom=1.in, left=1in, right=1in]{geometry}
+ [PACKAGES]
+ [EXTRA]" ;;header-string
+	       ("\\section{%s}" . "\\section*{%s}")
+	       ("\\subsection{%s}" . "\\subsection*a{%s}")
+	       ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+	       ("\\paragraph{%s}" . "\\paragraph*{%s}")
+	       ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
+
+
+
+
 ;; * Functions
 ;;;###autoload
 (defun ox-manuscript-toggle-interactive-build ()
@@ -325,6 +365,7 @@ references should go into a separate file."
     (goto-char (point-min))
     (re-search-forward "begin{document}" (point-max))
     (forward-line)
+    (insert ox-manuscript-page-numbering)
     (beginning-of-line)
     (setq p1 (point))
     (re-search-forward "end{document}")
@@ -371,7 +412,7 @@ This function checks for the presence of minted, and uses
 -shell-escape if needed.  You can run this interactively, and you
 will be prompted for a tex file name."
   (interactive "fTex file: ")
-  (message "running pdflatex on %s" tex-file)
+  (message "running %s on %s" ox-manuscript-latex-command tex-file)
 
   (let ((minted-p (with-temp-buffer
 		    (insert-file-contents tex-file)
@@ -396,7 +437,17 @@ will be prompted for a tex file name."
 		     tex-file))))
 
     (with-current-buffer (get-buffer-create "*latex*")
-      (insert results))))
+      (insert results))
+
+    ;; return truth value for success
+    (when (or (string-match "Fatal error occurred" results)
+	      (string-match "Undefined control sequence" results))
+      (switch-to-buffer "*latex*")
+      (occur "warning\\|undefined\\|error\\|missing")
+      (if (y-or-n-p "Continue?")
+	  nil
+	(let ((debug-on-error nil))
+	  (error "LaTeX compilation error detected."))))))
 
 ;;;###autoload
 (defun ox-manuscript-bibtex (tex-file)
@@ -573,7 +624,7 @@ intermediate output steps."
     0))
 
 ;; We use our function for building the manuscript
-(setq org-latex-pdf-process 'ox-manuscript-latex-pdf-process)
+(setq org-latex-pdf-process #'ox-manuscript-latex-pdf-process)
 
 
 (defun ox-manuscript-build ()
@@ -784,8 +835,9 @@ The optional FILES keyword is a list of additional files to copy into the archiv
 		       t))
 
 	  ;; flatten the filename in the tex-file
-	  (setf (buffer-substring start (- end 1))
-		(format "%02d-%s" figure-count fname)))))
+	  (cl--set-buffer-substring
+	   start (- end 1)
+	   (format "%02d-%s" figure-count fname)))))
 
     ;; the tex-file is no longer valid in the current directory
     ;; because the paths to images are wrong. So we move it to where
@@ -899,15 +951,16 @@ The templates are just org-files that can be inserted into a
 
 
 (defun ox-manuscript-parse-template-file (template-file)
-  "Parse the TEMPLATE-FILE and return a plist."
-  (prog1
-      (list
-       :key (ox-manuscript-get-filetag "KEY" template-file)
-       :group (ox-manuscript-get-filetag "GROUP" template-file)
-       :template (ox-manuscript-get-filetag "TEMPLATE" template-file)
-       :default-filename (ox-manuscript-get-filetag
-			  "DEFAULT-FILENAME" template-file)
-       :filename template-file)))
+  "Parse the TEMPLATE-FILE and return a plist.
+Return nil if no key is found in TEMPLATE-FILE."
+  (when (ox-manuscript-get-filetag "KEY" template-file)
+    (list
+     :key (ox-manuscript-get-filetag "KEY" template-file)
+     :group (ox-manuscript-get-filetag "GROUP" template-file)
+     :template (ox-manuscript-get-filetag "TEMPLATE" template-file)
+     :default-filename (ox-manuscript-get-filetag
+			"DEFAULT-FILENAME" template-file)
+     :filename template-file)))
 
 
 (defun ox-manuscript-candidates ()
@@ -915,18 +968,37 @@ The templates are just org-files that can be inserted into a
 These are snippets in `ox-manuscript-templates-dir' in the \"manuscript\" group.
 '((name . data))."
   (append
-   (cl-loop for template-file in (f-entries ox-manuscript-templates-dir
-					    (lambda (f)
-					      (f-ext? f "org")))
-	    with data = nil
-	    do (setq data (ox-manuscript-parse-template-file template-file))
-	    collect data)
-   (cl-loop for template-file in (f-entries ox-manuscript-user-template-dir
-					    (lambda (f)
-					      (f-ext? f "org")))
-	    with data = nil
-	    do (setq data (ox-manuscript-parse-template-file template-file))
-	    collect data)))
+   (if ox-manuscript-templates-dir
+       (cl-loop for template-file in (f-entries ox-manuscript-templates-dir
+						(lambda (f)
+						  (f-ext? f "org")))
+		with data = nil
+		do (setq data (ox-manuscript-parse-template-file template-file))
+		when data
+		collect data)
+     '())
+   (if ox-manuscript-user-template-dir
+       (cl-loop for template-file in (f-entries ox-manuscript-user-template-dir
+						(lambda (f)
+						  (f-ext? f "org")))
+		with data = nil
+		do (setq data (ox-manuscript-parse-template-file template-file))
+		when data
+		collect data)
+     '())))
+
+
+(defun ox-manuscript-open (key)
+  "Open entry for KEY.
+KEY is a string that maps to a :key entry in `ox-manuscript-candidates'.
+Open document if it exists, create it otherwise."
+  (let ((entry (car (seq-filter (lambda (x) (string= key (plist-get x :key))) (ox-manuscript-candidates)))))
+    (if (file-exists-p (plist-get entry :default-filename))
+	(find-file (plist-get entry :default-filename))
+      (find-file (plist-get entry :default-filename))
+      (insert-file-contents (plist-get entry :filename))
+      (goto-char (point-min))
+      (font-lock-fontify-buffer))))
 
 
 ;;;###autoload
@@ -943,14 +1015,10 @@ These are snippets in `ox-manuscript-templates-dir' in the \"manuscript\" group.
 					  (plist-get x :template))
 				  x))
 			       candidates)
+	      
 	      :action (lambda (entry)
-			(setq entry (cdr entry))
-			(if (file-exists-p (plist-get entry :default-filename))
-			    (find-file (plist-get entry :default-filename))
-			  (find-file (plist-get entry :default-filename))
-			  (insert-file-contents (plist-get entry :filename))
-			  (goto-char (point-min))
-			  (font-lock-fontify-buffer))))))
+			(ox-manuscript-open (plist-get (cdr entry) :key))))))
+
 
 (defun ox-manuscript-texcount ()
   "Use texcount to estimate words in an org-file if it exists.
@@ -990,6 +1058,29 @@ for a recipe to use for the export."
 				       (concat
 					(file-name-base (buffer-file-name))
 					".pdf")))))))
+
+
+;; * sentence spacing
+
+(defun ox-manuscript-one-space ()
+  "Make sentences separated by one space."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (and (forward-sentence) (not (eobp)))
+      (when (looking-at "\s+")
+	(replace-match " ")))))
+
+
+(defun ox-manuscript-two-space ()
+  "Make sentences separated by two spaces."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (and (forward-sentence) (not (eobp)))
+      (when (looking-at "\s+")
+	(replace-match "  ")))))
+
 
 (provide 'ox-manuscript)
 

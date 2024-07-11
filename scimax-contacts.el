@@ -6,6 +6,8 @@
 ;;
 ;; It relies on org-db to find contacts.
 ;;
+;; [2024-03-21 Thu] There is some overlap with org-db-contacts here. I am not
+;; sure what the best way to manage that, maybe move org-db-contacts here?
 
 ;;; Code:
 
@@ -46,19 +48,14 @@ If you are in a contact heading we store a link."
   (interactive)
   (let* ((email (org-element-property :path (org-element-context)))
 	 (candidates (cl-loop for (title value tags fname lup begin) in
-			      (emacsql org-db
-				       [:select [headlines:title
-						 headline-properties:value
-						 headlines:tags files:filename files:last-updated headlines:begin]
-						:from headlines
-						:inner :join headline-properties
-						:on (=  headlines:rowid headline-properties:headline-id)
-						:inner :join properties
-						:on (= properties:rowid headline-properties:property-id)
-						:inner :join files :on (= files:rowid headlines:filename-id)
-						:where (and  (= properties:property "EMAIL")
-							     (= headline-properties:value $s1))]
-				       email)
+			      (with-org-db
+			       (sqlite-select org-db "select headlines.title,headline_properties.value,headlines.tags,files.filename,files.last_updated,headlines.begin
+from headlines
+inner join headline_properties on headlines.rowid = headline_properties.headline_id
+inner join properties on properties.rowid = headline_properties.property_id
+inner join files on files.rowid = headlines.filename_id
+where properties.property = \"EMAIL\" and headline_properties.value = ?"
+					      (list email))) 
 			      collect
 			      (list (format "%40s | %s" title fname) :filename fname :begin begin :email email)))
 	 candidate)
@@ -78,7 +75,7 @@ If you are in a contact heading we store a link."
 
 (defun scimax-contact-complete (&optional arg)
   "Completion function for a scimax-contact.
-Optional argument ARG is ingored."
+Optional argument ARG is ignored."
   (let* ((contacts (org-db-contacts-candidates))
 	 (contact (cdr (assoc (completing-read "Contact: " contacts) contacts))))
     (org-link-store-props
@@ -99,23 +96,20 @@ Optional argument ARG is ingored."
 Argument WINDOW is ignored.
 Argument OBJECT is ignored.
 Argument POSITION is where the mouse cursor is."
-  (let* ((email (org-element-property :path (org-element-context))))
-    (cl-loop for (title value tags fname lup begin) in
-	     (emacsql org-db
-		      [:select [headlines:title
-				headline-properties:value
-				headlines:tags files:filename files:last-updated headlines:begin]
-			       :from headlines
-			       :inner :join headline-properties
-			       :on (=  headlines:rowid headline-properties:headline-id)
-			       :inner :join properties
-			       :on (= properties:rowid headline-properties:property-id)
-			       :inner :join files :on (= files:rowid headlines:filename-id)
-			       :where (and  (= properties:property "EMAIL")
-					    (= headline-properties:value $s1))]
-		      email)
-	     concat
-	     (format "%40s | %s | %s\n" email title fname))))
+  (with-current-buffer object
+    (save-excursion
+      (goto-char position)
+      (let* ((email (org-element-property :path (org-element-context))))
+	(cl-loop for (title value tags fname lup begin) in
+		 (with-org-db
+		  (sqlite-select org-db "select headlines.title,headline_properties.value,headlines.tags,files.filename,files.last_updated,headlines.begin
+from headlines inner join headline_properties on headlines.rowid = headline_properties.headline_id
+inner join properties on properties.rowid = headline_properties.property_id
+inner join files on files.rowid = headlines.filename_id
+where properties.property = \"EMAIL\" and headline_properties.value = ?"
+				 (list email)))
+		 concat
+		 (format "%40s | %s | %s\n" email title fname))))))
 
 
 (defun scimax-contact-email ()
@@ -138,8 +132,7 @@ Argument POSITION is where the mouse cursor is."
       (append
        (org-get-tags)
        (list (ivy-read "Tag: "
-		       (-flatten (emacsql org-db [:select [tags:tag]
-							  :from tags ])))))))
+		       (flatten-tree (with-org-db (sqlite-select org-db "select tag from tags"))))))))
     (save-buffer)))
 
 
@@ -177,51 +170,35 @@ If FROM is non-nil, emails from the contact."
   (let* ((email (org-element-property :path (org-element-context)))
 	 (link-candidates (cl-loop
 			   for (rl fn bg) in
-			   (emacsql org-db [:select [raw-link filename begin ]
-						    :from links
-						    :left :join files :on (= links:filename-id files:rowid)
-						    :where (and
-							    (= links:type "contact")
-							    (= links:path $s1))
-						    :order :by filename]
-				    email)
+			   (with-org-db
+			    (sqlite-select org-db "select raw_link,filename,begin from links
+left join files on links.filename_id = files.rowid
+where links.type = \"contact\" and links.path = ?
+order by filename" (list email))) 
 			   collect
 			   ;; (candidate :filename :begin)
 			   (list (format "%s | %s" rl fn) :filename fn :begin bg)))
 
-	 (results (emacsql org-db
-			   [:select [headlines:title
-				     properties:property
-				     headline-properties:value
-				     files:filename files:last-updated headlines:begin]
-				    :from headlines
-				    :inner :join headline-properties
-				    :on (=  headlines:rowid headline-properties:headline-id)
-				    :inner :join properties
-				    :on (= properties:rowid headline-properties:property-id)
-				    :inner :join files :on (= files:rowid headlines:filename-id)
-				    :where (and (= properties:property "ASSIGNEDTO")
-						(like headline-properties:value $s1))]
-			   email))
+	 (results (with-org-db
+		   (sqlite-select org-db "select headlines.title,properties.property,headline_properties.value, files.filename, files.last_updated,headlines.begin
+from headlines
+inner join headline_properties
+on headlines.rowid = headline_properties.headline_id
+inner join properties on properties.rowid = headline_properties.property_id
+inner join files on files.rowid = headlines.filename_id
+where properties.property = \"ASSIGNEDTO\" and headline_properties.value like ?" (list email))))
 
 	 (assigned-candidates (cl-loop for (title property value fname last-updated begin) in results
 				       collect
 				       (list (format "%s | %s=%s | %s" title property value fname)
 					     :filename fname :begin begin)))
-	 (results (emacsql org-db
-			   [:select [headlines:title
-				     properties:property
-				     headline-properties:value
-				     files:filename files:last-updated headlines:begin]
-				    :from headlines
-				    :inner :join headline-properties
-				    :on (=  headlines:rowid headline-properties:headline-id)
-				    :inner :join properties
-				    :on (= properties:rowid headline-properties:property-id)
-				    :inner :join files :on (= files:rowid headlines:filename-id)
-				    :where (and (= properties:property "EMAIL")
-						(like headline-properties:value $s1))]
-			   email))
+	 (results (with-org-db
+		   (sqlite-select org-db "select headlines.title,properties.property, headline_properties.value,files.filename, files.last_updated,headlines.begin
+from headlines
+inner join headline_properties on headlines.rowid = headline_properties.headline_id
+inner join properties on properties.rowid = headline_properties.property_id
+inner join files on files.rowid = headlines.filename_id
+where properties.property = \"EMAIL\" and headline_properties.value like ?" (list email))))
 	 (email-candidates (cl-loop for (title property value fname last-updated begin) in results
 				    collect
 				    (list (format "%s | %s=%s | %s" title property value fname)
@@ -321,28 +298,23 @@ Optional argument PATH is ignored."
 
 (defun scimax-contacts-exists-p (email)
   "Return non-nil if the EMAIL address is already in org-db."
-  (not (null (emacsql org-db
-		      [:select [files:filename headlines:begin headlines:title]
-			       :from headlines
-			       :inner :join headline-properties
-			       :on (=  headlines:rowid headline-properties:headline-id)
-			       :inner :join properties
-			       :on (= properties:rowid headline-properties:property-id)
-			       :inner :join files :on (= files:rowid headlines:filename-id)
-			       :where (and (= properties:property "EMAIL")
-					   (= headline-properties:value $s1))]
-		      email))))
+  ;; this seems complicated. why cand I just check headline_properties.value?
+  (not (null (with-org-db (sqlite-select org-db "select files.filename,headlines.begin,headlines.title
+from headlines inner join headline-properties on headlines.rowid = headline_properties.headline_id
+inner join properties on properties.rowid = headline_properties.property_id
+inner join files on files.rowid = headlines.filename_id
+where properties.property = \"EMAIL\" and headline_properties.value = ?" (list email))))))
 
 
 
 (defvar scimax-message-org-contacts-file
-  (expand-file-name "message-contacts.org" scimax-user-dir)
+  (expand-file-name (locate-user-emacs-file "message-contacts.org")) 
   "File name to store contacts captured from messages.")
 
 
 
 ;; * Capture contacts in messages
-;; I use this this mu4e, but it should work in any message.
+;; I use this with mu4e, but it should work in any message.
 
 (defun scimax-message-get-emails ()
   "Captures emails in a message."

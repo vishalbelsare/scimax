@@ -9,15 +9,21 @@
 ;; - org-db-headings?
 ;; - contacts
 ;;
-;; it is an experiment
+;; it is an experiment inspired by a feature in Google docs that prompts you
+;; with a dropdown list of things to insert with @.
+;;
+;; The main function is `@-insert-link' and when you load this library, that is
+;; bound to the @ key.
 
 (require 'org-db)
 (require 'org-ref)
+
 
 (defcustom scimax-links-candidate-functions
   '(@-links-this-buffer
     @-links-org-buffers
     @-links-open-files
+    @-hashtags
     @-links-stored-links
     @-counsel-recentf-candidates
     @-projectile-relevant-known-projects
@@ -25,6 +31,7 @@
   "List of functions that generate candidates"
   :group 'scimax-@-link
   :type '(repeat function))
+
 
 (defcustom scimax-insert-link-functions
   `(counsel-find-file
@@ -36,7 +43,9 @@
   :group 'scimax-@-link
   :type '(repeat function))
 
+
 ;; * Augment some projectile functions with links
+
 (defun scimax-projectile-insert-file-link (f)
   "Insert a file link to F in a project.
 F is going to be a string that is a filename or directory."
@@ -51,17 +60,21 @@ F is going to be a string that is a filename or directory."
  'counsel-projectile-find-file
  '(("l" scimax-projectile-insert-file-link "Insert link")))
 
+
 (ivy-add-actions
  'counsel-projectile-find-dir
  '(("l" scimax-projectile-insert-file-link "Insert link")))
+
 
 (ivy-add-actions
  'counsel-projectile-switch-project
  '(("l" scimax-projectile-insert-file-link "Insert link")))
 
+
 (ivy-add-actions
  'counsel-projectile
  '(("l" scimax-projectile-insert-file-link "Insert link")))
+
 
 (ivy-add-actions
  'counsel-recentf
@@ -69,6 +82,7 @@ F is going to be a string that is a filename or directory."
 
 
 ;; * Candidate generation functions
+
 (defun @-links-this-buffer ()
   "Return list of candidates in the current buffer.
 The candidates are to:
@@ -115,11 +129,27 @@ A candidate is a list of (link function)."
 			candidates)))))
     candidates))
 
+
 (defun open-org-buffers ()
-  (-filter (lambda (b)
-	     (-when-let (f (buffer-file-name b))
-	       (f-ext? f "org")))
-	   (buffer-list)))
+  "Return a list of buffers to org-files."
+  (seq-filter (lambda (b)
+		(when-let (f (buffer-file-name b))
+		  (string= "org" (file-name-extension f))))
+	      (buffer-list)))
+
+
+(defun @-hashtags ()
+  "Get a list of candidate hashtags you have used before."
+  (let* ((tip (looking-at-hashtag))
+	 (hashtag-data (with-org-db
+			(sqlite-select org-db "select
+hashtag, file_hashtags.begin, files.filename
+from hashtags
+left join file_hashtags on hashtags.rowid = file_hashtags.hashtag_id
+inner join files on files.rowid = file_hashtags.filename_id"))))
+    (-uniq (cl-loop for (hashtag begin fname) in hashtag-data
+		    collect (concat "#" hashtag)))))
+
 
 (defun @-links-org-buffers ()
   "Return candidates in all open org-buffers.

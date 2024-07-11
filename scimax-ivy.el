@@ -35,25 +35,28 @@
 (define-key ivy-minibuffer-map (kbd "C-k") 'kill-whole-line)
 
 
+;; * ivy-become
 ;; This is an idea I got from embark. It solves a problem I have had a lot,
 ;; where I want to transfer the input text to another command. Why not use
 ;; embark? I find it confusing.
 
 (defun scimax-ivy-become ()
   "Change the command and reuse the current input.
-    You will be prompted to enter a new key sequence which can be a
-    shortcut or M-x. Then it will put the current input in the
-    minibuffer for the command.
+    You will be prompted to enter a new key sequence which can be
+    a shortcut or M-x. Then it will put the current input or
+    candidate in the minibuffer for the command.
 
     Applications:
-    1. start with swiper, enter some text, C-M-b H-s to transfer the current input to swiper-all
-    2. C-xC -b to switch-buffer, C-M-b C-x C-f to transfer input to find-file."
+    1. start with swiper, enter some text, s-b H-s to transfer the current input to swiper-all
+    2. C-xC-b to switch-buffer, s-b C-x C-f to transfer input to find-file.
+    3. C-xC-f to find-file, s-b C-x 5 f to open in new frame.
+"
   (interactive)
-  (let* ((input ivy-text)
+  (let* ((input (if (string= "" ivy-text)
+		    (ivy-state-current ivy-last)
+		  ivy-text))
          (transfer-input (lambda ()
-			   (setf (buffer-substring
-				  (point) (line-beginning-position))
-				 "")
+			   (cl--set-buffer-substring (point) (line-beginning-position) "") 
 			   (insert input))))
     (ivy-exit-with-action
      (lambda (x)
@@ -74,9 +77,8 @@
 (define-key ivy-minibuffer-map (kbd "s-o") 'ivy-occur)
 
 
+;; * Show key bindings
 
-
-;; Show key bindings
 (defun scimax-show-key-bindings ()
   "Show keys in the map"
   (interactive)
@@ -95,9 +97,11 @@
 
 (define-key ivy-minibuffer-map (kbd "C-s") #'scimax-ivy-show-marked-candidates)
 
-;; Marking candidates
+;; * Marking candidates
 (defun scimax-ivy-toggle-mark ()
-  "Toggle the mark"
+  "Toggle the mark.
+This stays on the line because eventually you press <return> and
+that could include the next line, which is not desirable here."
   (interactive)
   (if (ivy--marked-p)
       (ivy-unmark)
@@ -105,7 +109,21 @@
   (ivy-previous-line))
 
 (define-key ivy-minibuffer-map (kbd "M-TAB")
-  #'scimax-ivy-toggle-mark)
+	    #'scimax-ivy-toggle-mark)
+
+
+(define-key ivy-minibuffer-map (kbd "S-<down>")
+	    (lambda ()
+	      "Mark line and go to next."
+	      (interactive)
+	      (ivy-mark)))
+
+
+(define-key ivy-minibuffer-map (kbd "S-<up>")
+	    (lambda ()
+	      (interactive)
+	      (ivy-unmark)
+	      (ivy-previous-line 2)))
 
 
 ;; * alternate actions via completion
@@ -115,7 +133,7 @@
 ;; 
 ;; I wrote this because some commands have so many alternate actions
 ;; they are not all visible, and in those cases using completion is
-;; preferrable to scanning a lot of options.
+;; preferable to scanning a lot of options.
 
 ;; (defun scimax-ivy-alternate ()
 ;;   "Run an alternate selection on the current candidate with completion.
@@ -190,132 +208,18 @@
 	  (describe-keymap ivy-minibuffer-map))
     "Describe keys")))
 
-;; ** Extra projectile actions
-;; Here I can open bash or finder when switching projects
-
-(defun scimax-ivy-projectile-bash (x)
-  "Open bash at X chosen from `projectile-completing-read'."
-  (let* ((full-path (f-join (projectile-project-root) x))
-	 (dir (if (file-directory-p full-path)
-		  full-path
-		(file-name-directory full-path))))
-    (bash dir)
-    ;; I use this to just get out of whatever called this to avoid visiting a
-    ;; file for example.
-    (recursive-edit)
-    (ivy-quit-and-run)))
-
-
-(defun scimax-ivy-projectile-finder (x)
-  "Open finder at X chosen from `projectile-completing-read'."
-  (let* ((full-path (f-join (projectile-project-root) x))
-	 (dir (if (file-directory-p full-path)
-		  full-path
-		(file-name-directory full-path))))
-    (finder dir)
-    ;; I use this to just get out of whatever called this to avoid visiting a
-    ;; file for example.
-    (recursive-edit)
-    (ivy-quit-and-run)))
-
-
-(defun scimax-ivy-insert-project-link (x)
-  "Insert a relative path link to X chosen from `projectile-completing-read'."
-  (let* ((full-path (f-join (projectile-project-root) x))
-	 (current-path (file-name-directory (buffer-file-name)))
-	 (rel-path (file-relative-name full-path current-path)))
-    (insert (format "[[%s]]" rel-path)))
-  ;; I use this to just get out of whatever called this to avoid visiting a
-  ;; file for example.
-  (recursive-edit)
-  (ivy-quit-and-run))
-
-
-(defun scimax-ivy-magit-status (x)
-  "Run magit status from `projectile-completing-read'.
-Right now, it runs `magit-status' in the directory associated
-with the entry."
-  (cond
-   ;; A directory, we can just get the status
-   ((file-directory-p x)
-    (let ((default-directory x))
-      (magit-status-setup-buffer)))
-   ;; something else?
-   (t
-    ;; What should we do on a file? show that file change? just do magit status?
-    (let* ((full-path (f-join (projectile-project-root) x))
-	   (dir (if (file-directory-p full-path)
-		    full-path
-		  (file-name-directory full-path))))
-
-      (let ((default-directory dir))
-	(magit-status-setup-buffer)))
-    (recursive-edit)
-    (ivy-quit-and-run))))
-
-
-;; See `counsel-projectile-switch-project-action-ag'
-;; (defun scimax-ivy-projectile-ag (x)
-;;   "Run projectile-ag in the selected project X."
-;;   (let ((default-directory x))
-;;     (call-interactively #'projectile-ag)))
-
-;; See `counsel-projectile-switch-project-action-rg'
-;; (defun scimax-ivy-projectile-ripgrep (x)
-;;   "Run projectile-ag in the selected project X."
-;;   (let ((default-directory x))
-;;     (call-interactively #'projectile-ripgrep)))
-
-
-(defun scimax-ivy-projectile-org-heading (x)
-  "Open a heading in the project X"
-  (let ((default-directory x))
-    (call-interactively #'ivy-org-jump-to-project-headline)))
-
-;; See [[nb:scimax::elpa/counsel-projectile-20201015.1109/counsel-projectile.el::c53333]]
-;; for a long list of actions in counsel-projectile
-(cl-loop for projectile-cmd in '(projectile-completing-read
-				 counsel-projectile-switch-project)
-	 do
-	 (ivy-add-actions
-	  projectile-cmd 
-	  '(
-	    ;; xs runs shell, and xe runs eshell. This is nice for an external shell.
-	    ("xb" scimax-ivy-projectile-bash "Open bash here.")
-	    ("xf" scimax-ivy-projectile-finder  "Open Finder here.")
-
-	    ;; This may not be useful, there is already v
-	    ("xg" scimax-ivy-magit-status  "Magit status")
-	    ("h" scimax-ivy-projectile-org-heading "Open project heading")
-	    ("l" scimax-ivy-insert-project-link "Insert project link")))) 
-
-
-
-(ivy-add-actions 'counsel-projectile-switch-project
-		 '(("l" (lambda (x)
-			  (insert (format "[[%s]]" x)))
-		    "Insert link to project")))
-
-
-(defun scimax-projectile-switch-project-transformer (project)
-  "Add title from readme.org in file if it exists."
-  (let ((title (when (file-exists-p (f-join project "readme.org"))
-		 (with-temp-buffer
-		   (insert-file-contents (f-join project "readme.org"))
-		   (when (re-search-forward "#\\+title:\\(.*\\)" nil t)
-		     (propertize (match-string 1)
-				 'face '(:foreground "DodgerBlue1")))))))
-    (format "%60s%s" (s-pad-right 60 " " project) (or title ""))))
-
-
-(ivy-configure 'counsel-projectile-switch-project :display-transformer-fn
-	       #'scimax-projectile-switch-project-transformer)
-(ivy-configure 'projectile-switch-project :display-transformer-fn
-	       #'scimax-projectile-switch-project-transformer)
 
 
 ;; ** Find file actions
 ;; I like to do a lot of things from find-file.
+
+;; I replace the x action with a x as a prefix here.
+(let ((p (plist-get ivy--actions-list 'counsel-find-file )))
+  (setq p (remove '("x" counsel-find-file-extern "open externally") p))
+  (push '("xt" counsel-find-file-extern "open externally") p)
+  (plist-put ivy--actions-list 'counsel-find-file p))
+
+
 (ivy-add-actions
  'counsel-find-file
  '(("a" (lambda (x)
@@ -335,6 +239,7 @@ with the entry."
 	  "Open X in another frame."
 	  (find-file-other-frame x))
     "Open in new frame")
+
    ("p" (lambda (path)
 	  (with-ivy-window
 	    (insert (f-relative path))))
@@ -360,12 +265,29 @@ with the entry."
    ("r" (lambda (path)
 	  (rename-file path (read-string "New name: ")))
     "Rename")
-   ("F" (lambda (path)
-	  (finder (file-name-directory path)))
+   ("s" (lambda (path)
+	  (find-file path)
+	  (swiper))
+    "Swiper in file")
+   
+   ("xb" (lambda (path)
+	   (bash (file-name-directory path)))
+    "Open in bash")
+   
+   ("xe" (lambda (path)
+	   (let ((default-directory (file-name-directory
+				     (expand-file-name path))))
+	     (eshell)))
+    "Open in eshell")
+   
+   ("xf" (lambda (path)
+	   (finder (file-name-directory path)))
     "Open in finder/explorer")
-   ("b" (lambda (path)
-	  (bash (file-name-directory path)))
-    "Open in bash")))
+   
+   ("xh" (lambda (path)
+	   (find-file path)
+	   (ivy-org-jump-to-heading))
+    "Jump to org heading in file")))
 
 
 ;; * ivy colors
@@ -429,7 +351,7 @@ with the entry."
 
 
 ;; a data structure for a process
-(defstruct ivy-ps user pid)
+(cl-defstruct ivy-ps user pid)
 
 
 (defun ivy-ps ()
@@ -447,7 +369,12 @@ TODO: sorting, actions."
     (ivy-read "process: " candidates
 	      :action
 	      '(1
-		("k" (lambda (cand) (message "%s" (ivy-ps-pid cand))) "kill")))))
+		("k" (lambda (cand)
+		       (shell-command (format "kill -9 %s" (ivy-ps-pid (cdr cand)))))
+		 "kill")
+		("2" (lambda (cand)
+		       (shell-command (format "kill -USR2 %s" (ivy-ps-pid (cdr cand)))))
+		 "kill -USR2")))))
 
 (provide 'scimax-ivy)
 

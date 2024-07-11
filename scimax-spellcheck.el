@@ -161,6 +161,48 @@ FLYSPELL-BUFFER."
     (if (= pos min)
 	(message "No more miss-spelled word!"))))
 
+;; * flyspell predicate function in scimax
+;;
+;; This variable `flyspell-generic-check-word-predicate' is used to determine if a word is mispelled. Org-mode sets this variable to `org-mode-flyspell-verify'. I have a need to augment this.
+
+(defvar scimax-flyspell-predicates '(org-mode-flyspell-verify)
+  "List of functions to check in order for flyspell.
+Each function returns t if it should continue, and nil to ignore.")
+
+(defun scimax-flyspell-verify ()
+  "flyspell-verification function.
+Only continue if all functions return t. If any returns nil, then
+it should be marked."
+  (cl-every (lambda (x) (funcall x)) scimax-flyspell-predicates))
+
+(setq flyspell-generic-check-word-predicate #'scimax-flyspell-verify)
+
+
+;; * typos
+
+(defun typos ()
+  "Run typos and make a clickable buffer to get to the typos.
+See https://github.com/crate-ci/typos."
+  (interactive)
+
+  (unless (executable-find "typos")
+    (error "typos was not found. Try: brew install typos-cli."))
+  
+  (let ((lines (split-string (string-trim (shell-command-to-string "typos --format json --exclude=*.png --exclude=*deprecated*")) "\n"))
+	data)
+    (with-current-buffer (get-buffer-create "*typos*")
+      (erase-buffer)
+      ;; (insert (shell-command-to-string "typos --format json"))
+      (cl-loop for line in lines do
+	       (let-alist (json-read-from-string line)
+		 (insert (format "- %s [[elisp:(progn (find-file \"%s\") (goto-line %s)(forward-char %s))][%s]] %s -> %s\n"
+				 .type
+				 .path
+				 .line_num .byte_offset
+				 .path
+				 .typo .corrections))))
+      (org-mode))
+    (pop-to-buffer "*typos*")))
 
 (provide 'scimax-spellcheck)
 

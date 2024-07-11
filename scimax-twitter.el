@@ -530,9 +530,9 @@ Any link will count 23 characters."
 
 
 ;; * Exporter
-;; http://qaz.wtf/u/convert.cgi?text=ABCDEFGHIJKLMNOPQRSTUVWZYZabcdefghijklmnopqrstuvwxyz0123456789
+;; http://qaz.wtf/u/convert.cgi?text=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 (defun scimax-twitter-filter-bold (text back-end info)
-  (let ((plain "ABCDEFGHIJKLMNOPQRSTUVWZYZabcdefghijklmnopqrstuvwxyz0123456789")
+  (let ((plain "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
 	(ubold "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗")
 	i)
     (replace-regexp-in-string "*" ""
@@ -643,8 +643,8 @@ Any link will count 23 characters."
 
 ;; The Twitter API for scheduling tweets is not that easy to use, and you have
 ;; to register as an advertiser. Rather than do that, here I try to leverage the
-;; at scheduler (avialiable on Mac and Linux) to do scheduling of tweets. The
-;; idea is to use teh scheduled property on a headline to specify when to tweet
+;; at scheduler (available on Mac and Linux) to do scheduling of tweets. The
+;; idea is to use the scheduled property on a headline to specify when to tweet
 ;; it, then create a shell script that runs to tweet it. This is limited to a
 ;; single image I think.
 

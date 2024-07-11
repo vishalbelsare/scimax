@@ -40,13 +40,13 @@ Set to nil to avoid loading a theme."
 
 (fset 'yes-or-no-p 'y-or-n-p) ; answer with y/n instead of yes/no
 
-(setq custom-file (expand-file-name "user/custom.el" scimax-dir))
-(when (f-exists? custom-file) (load custom-file))
+;; (setq custom-file (expand-file-name "user/custom.el" scimax-dir))
+;; (when (f-exists? custom-file) (load custom-file))
 
 (setq auto-save-list-file-prefix (expand-file-name "auto-save-list/saves-" scimax-dir))
 
 ;; abbrevs
-(setq abbrev-file-name (expand-file-name "user/abbrev_defs" scimax-dir))
+;; (setq abbrev-file-name (expand-file-name "user/abbrev_defs" scimax-dir))
 (setq save-abbrevs t)
 (setq-default abbrev-mode t)
 (setq save-abbrevs 'silently)
@@ -57,12 +57,12 @@ Set to nil to avoid loading a theme."
 (setq vc-handled-backends '(Git SVN))
 
 (defun scimax-update ()
-  "Update scimax from github."
+  "Update scimax from GitHUB."
   (interactive)
   (let ((default-directory scimax-dir))
     (when (not (string= "" (shell-command-to-string "git status --porcelain")))
       (shell-command "git add *")
-      (shell-command "git commit -am \"commiting scimax.\""))
+      (shell-command "git commit -am \"committing scimax.\""))
     (shell-command "git pull origin master")
     (shell-command "git submodule update")
     (load-file "init.el")))

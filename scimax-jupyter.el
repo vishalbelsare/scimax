@@ -6,10 +6,6 @@
 (require 'scimax-ob)
 (require 'jupyter)
 
-;; * automatic buffer kernels This is done by setting a session name in the org
-;; file <jps is a yasnippet that does this reliably. I decided for now it is too
-;; difficult to advise everything in jupyter to get the same result.
-
 
 ;; * scimax jupyter header defaults
 
@@ -17,7 +13,8 @@
 
 (setq org-babel-default-header-args:jupyter-python
       '((:results . "both")
-	(:session . "jupyter-python")
+	;; This seems to lead to buffer specific sessions!
+	(:session . (lambda () (buffer-file-name)))
 	(:kernel . "python3")
 	(:pandoc . "t")
 	(:exports . "both")
@@ -79,12 +76,18 @@
 (defun scimax-jupyter-get-session ()
   "Get the session name in the current buffer."
   (let ((lang (car (org-babel-get-src-block-info))))
-    (or
-     (cdr
-      (assoc :session
-	     (cadr (org-babel-params-from-properties lang))))
-     (cdr (assoc :session
-		 org-babel-default-header-args:jupyter-python)))))
+    (let ((session (org-babel-read
+		    (or
+		     (cdr
+		      (assoc :session
+			     (cadr (org-babel-params-from-properties lang))))
+		     (cdr (assoc :session
+				 org-babel-default-header-args:jupyter-python))))))
+      (cond
+       ((functionp session)
+	(funcall session))
+       (t
+	session)))))
 
 
 (defun scimax-jupyter-org-kill-kernel ()
@@ -123,9 +126,10 @@
 (defcustom scimax-jupyter-advices
   '((org-babel-execute:jupyter :before scimax-jupyter-kill-kernel-hook)
     (org-babel-execute:jupyter :before scimax-jupyter-check-restart)
-    (jupyter-org-sync-results :override scimax-jupyter-org-sync-results)
-    (jupyter-org--add-result :override scimax-jupyter-org--add-result)
-    (jupyter-org-export-block-or-pandoc :override scimax-jupyter-org-export-block-or-pandoc))
+    ;; (jupyter-org-sync-results :override scimax-jupyter-org-sync-results)
+    ;; (jupyter-org--add-result :override scimax-jupyter-org--add-result)
+    ;; (jupyter-org-export-block-or-pandoc :override scimax-jupyter-org-export-block-or-pandoc)
+    )
   "Advices for scimax-jupyter.
 This is a list of (emacs-jupyter-fn :position scimax-jupyter-fn)"
   :group 'scimax-jupyter)
@@ -160,98 +164,98 @@ This is a list of (emacs-jupyter-fn :position scimax-jupyter-fn)"
 ;; come first in some process filter. This avoids this step and we do it later
 ;; in `scimax-jupyter-org-sync-results'. There is probably no guarantee that
 ;; this always works though.
-(defun scimax-jupyter-org-export-block-or-pandoc (type value params)
-  "Return VALUE, either converted with pandoc or in an export block.
-If PARAMS has non-nil value for key ':pandoc' and TYPE is in
-`jupyter-org-pandoc-convertable', convert the result with pandoc.
-Otherwise, wrap it in an export block."
-  (jupyter-org-export-block type value))
+;; (defun scimax-jupyter-org-export-block-or-pandoc (type value params)
+;;   "Return VALUE, either converted with pandoc or in an export block.
+;; If PARAMS has non-nil value for key ':pandoc' and TYPE is in
+;; `jupyter-org-pandoc-convertable', convert the result with pandoc.
+;; Otherwise, wrap it in an export block."
+;;   (jupyter-org-export-block type value))
 
 
-;; used to advise `jupyter-org-sync-results'. I do this to fix some issues liek
-;; retults drawers, etc.
-(defun scimax-jupyter-org-sync-results (req)
-  "Return the result string in org syntax for the results of REQ.
-Meant to be used as the return value of
-`org-babel-execute:jupyter'."
-  (when-let* ((results (nreverse (jupyter-org-request-results req))) 
-	      ;; Not sure why these are reversed above, it works right for some things,
-	      ;; but not right for display stuff. I wonder if there is some way
-	      ;; to tell when something is displayed.
-              (params (jupyter-org-request-block-params req))
-              (result-params (alist-get :result-params params)))
+;; used to advise `jupyter-org-sync-results'. I do this to fix some issues like
+;; results drawers, etc.
+;; (defun scimax-jupyter-org-sync-results (req)
+;;   "Return the result string in org syntax for the results of REQ.
+;; Meant to be used as the return value of
+;; `org-babel-execute:jupyter'."
+;;   (when-let* ((results (nreverse (jupyter-org-request-results req))) 
+;; 	      ;; Not sure why these are reversed above, it works right for some things,
+;; 	      ;; but not right for display stuff. I wonder if there is some way
+;; 	      ;; to tell when something is displayed.
+;;               (params (jupyter-org-request-block-params req))
+;;               (result-params (alist-get :result-params params)))
 
-    ;; There is an inconsistency when you specify :results value where printed
-    ;; outputs and the return value is provided, sometimes as a fixed width.
-    ;; That is consistent with the jupyter notebook, but not consistent with
-    ;; org-babel. Here I only return the last thing if value is selected, and do
-    ;; not require it to be fixed-width. That also isn't quite right, except in
-    ;; a drawer. 
-    (when (member "value" result-params)
-      (let ((retval (car (last results)))) 
-	(setq results
-	      (list
-	       (cond
-		((eq 'fixed-width (org-element-type retval))
-		 (org-element-property :value retval))
-		(t
-		 retval))))))
+;;     ;; There is an inconsistency when you specify :results value where printed
+;;     ;; outputs and the return value is provided, sometimes as a fixed width.
+;;     ;; That is consistent with the jupyter notebook, but not consistent with
+;;     ;; org-babel. Here I only return the last thing if value is selected, and do
+;;     ;; not require it to be fixed-width. That also isn't quite right, except in
+;;     ;; a drawer. 
+;;     (when (member "value" result-params)
+;;       (let ((retval (car (last results)))) 
+;; 	(setq results
+;; 	      (list
+;; 	       (cond
+;; 		((eq 'fixed-width (org-element-type retval))
+;; 		 (org-element-property :value retval))
+;; 		(t
+;; 		 retval))))))
 
-    (when (member "both" result-params)
-      (let ((retval (car (last results)))) 
-	(setf (car (last results))
-	      (cond
-	       ((eq 'fixed-width (org-element-type retval))
-		(org-element-property :value retval))
-	       (t
-		retval)))))
+;;     (when (member "both" result-params)
+;;       (let ((retval (car (last results)))) 
+;; 	(setf (car (last results))
+;; 	      (cond
+;; 	       ((eq 'fixed-width (org-element-type retval))
+;; 		(org-element-property :value retval))
+;; 	       (t
+;; 		retval)))))
 
-    ;; Do pandoc conversion here so the order of results is preserved.
-    (when (cdr (assoc :pandoc params))
-      (setq results
-	    (cl-loop for result in results
-		     collect
-		     (cond
-		      ((stringp result)
-		       result)
-		      ((and (listp result)
-			    (member (org-element-property :type result) jupyter-org-pandoc-convertable))
-		       (jupyter-pandoc-convert
-			(org-element-property :type result)
-			"org"
-			(org-element-property :value result)))
-		      (t
-		       result)))))
-    
-    (org-element-interpret-data
-     (cond
-      ;; This happens when a named block is a variable in another block.
-      ;; It is different than a :results silent header.
-      ((jupyter-org-request-silent-p req)
-       results)
+;;     ;; Do pandoc conversion here so the order of results is preserved.
+;;     (when (cdr (assoc :pandoc params))
+;;       (setq results
+;; 	    (cl-loop for result in results
+;; 		     collect
+;; 		     (cond
+;; 		      ((stringp result)
+;; 		       result)
+;; 		      ((and (listp result)
+;; 			    (member (org-element-property :type result) jupyter-org-pandoc-convertable))
+;; 		       (jupyter-pandoc-convert
+;; 			(org-element-property :type result)
+;; 			"org"
+;; 			(org-element-property :value result)))
+;; 		      (t
+;; 		       result)))))
 
-      ((member "raw" result-params)
-       results)
+;;     (org-element-interpret-data
+;;      (cond
+;;       ;; This happens when a named block is a variable in another block.
+;;       ;; It is different than a :results silent header.
+;;       ((jupyter-org-request-silent-p req)
+;;        results)
 
-      ;; fall through to a drawer for now.
-      (t
-       (apply #'jupyter-org-results-drawer results))))))
+;;       ((member "raw" result-params)
+;;        results)
+
+;;       ;; fall through to a drawer for now.
+;;       (t
+;;        (apply #'jupyter-org-results-drawer results))))))
 
 
 
 ;; This was causing a problem in emacs-jupyter for using code blocks as
 ;; variables in other blocks. Commenting out the first line seems to fix it for
 ;; me.
-(defun scimax-jupyter-org--add-result (req result)
-  (cond
-   ;; ((jupyter-org-request-silent-p req)
-   ;;  (unless (equal (jupyter-org-request-silent-p req) "none")
-   ;;    (message "%s" (org-element-interpret-data result))))
-   ((jupyter-org-request-async-p req)
-    (jupyter-org--clear-request-id req)
-    (jupyter-org--do-insert-result req result))
-   (t
-    (push result (jupyter-org-request-results req)))))
+;; (defun scimax-jupyter-org--add-result (req result)
+;;   (cond
+;;    ;; ((jupyter-org-request-silent-p req)
+;;    ;;  (unless (equal (jupyter-org-request-silent-p req) "none")
+;;    ;;    (message "%s" (org-element-interpret-data result))))
+;;    ((jupyter-org-request-async-p req)
+;;     (jupyter-org--clear-request-id req)
+;;     (jupyter-org--do-insert-result req result))
+;;    (t
+;;     (push result (jupyter-org-request-results req)))))
 
 
 ;; I don't know where the \\ lines come from, this removes them.
@@ -278,25 +282,25 @@ Meant to be used as the return value of
 ;; though except in src blocks. normally it is triggered by jumping to the next
 ;; src-block, and this is when I don't want it to hide the previous results.
 
-(defun scimax-org-show-entry ()
-  "Show the body directly following this heading.
-Show the heading too, if it is currently invisible."
-  (interactive)
-  (unless (org-in-src-block-p)
-    (save-excursion
-      (ignore-errors
-	(org-back-to-heading t)
-	(outline-flag-region
-	 (max (point-min) (1- (point)))
-	 (save-excursion
-	   (if (re-search-forward
-		(concat "[\r\n]\\(" org-outline-regexp "\\)") nil t)
-	       (match-beginning 1)
-	     (point-max)))
-	 nil)
-	(org-cycle-hide-drawers 'children)))))
+;; (defun scimax-org-show-entry ()
+;;   "Show the body directly following this heading.
+;; Show the heading too, if it is currently invisible."
+;;   (interactive)
+;;   (unless (org-in-src-block-p)
+;;     (save-excursion
+;;       (ignore-errors
+;; 	(org-back-to-heading t)
+;; 	(outline-flag-region
+;; 	 (max (point-min) (1- (point)))
+;; 	 (save-excursion
+;; 	   (if (re-search-forward
+;; 		(concat "[\r\n]\\(" org-outline-regexp "\\)") nil t)
+;; 	       (match-beginning 1)
+;; 	     (point-max)))
+;; 	 nil)
+;; 	(org-cycle-hide-drawers 'children)))))
 
-(advice-add 'org-show-entry :override #'scimax-org-show-entry)
+;; (advice-add 'org-show-entry :override #'scimax-org-show-entry)
 
 ;; * Working with exceptions
 ;;
@@ -337,19 +341,60 @@ way, but it is."
        ;; search for something like --> 21
        (t
 	(goto-char location)
-	(re-search-forward "^-*> \\([[:digit:]]*\\)" (org-babel-result-end))
+	(re-search-forward "-*> \\([[:digit:]]*\\)" (org-babel-result-end))
 	(save-match-data
 	  (goto-char cp)
 	  (goto-char (org-element-property :begin (org-element-context))))
 	(forward-line (string-to-number (match-string-no-properties 1))))))))
 
 
+;; * Handling ansi codes
+
+(defun scimax-jupyter-ansi ()
+  "Replaces ansi-codes in exceptions with colored text.
+I thought emacs-jupyter did this automatically, but it may only
+happen in the REPL. Without this, the tracebacks are very long
+and basically unreadable.
+
+We also add some font properties to click on goto-error.
+
+This should only apply to jupyter-lang blocks."
+  (when (string-match "^jupyter" (car (or (org-babel-get-src-block-info t) '(""))))
+    (let* ((r (org-babel-where-is-src-block-result))
+	   (result (when r
+		     (save-excursion
+		       (goto-char r)
+		       (org-element-context)))))
+      (when result
+	(ansi-color-apply-on-region (org-element-property :begin result)
+				    (org-element-property :end result))
+
+	;; Let's fontify "# [goto error]" to it is clickable
+	(save-excursion
+	  (goto-char r)
+	  (when (search-forward "# [goto error]" (org-element-property :end result) t)
+	    (add-text-properties
+	     (match-beginning 0) (match-end 0)
+	     (list 'help-echo "Click to jump to error."
+		   'mouse-face 'highlight
+		   'local-map (let ((map (copy-keymap help-mode-map)))
+				(define-key map [mouse-1] (lambda ()
+							    (interactive)
+							    (search-backward "#+BEGIN_SRC")
+							    (scimax-jupyter-jump-to-error)))
+				map))))))
+      
+      t)))
+
+
+(add-to-list 'org-babel-after-execute-hook 'scimax-jupyter-ansi t)
+
 ;; * The scimax jupyter hydra
 ;; customization of what is in jupyter
 ;; These are more aligned with jupyter notebook I think
 
 ;; I had to use pretty hydra to get nicely aligned columns here.
-(require 'pretty-hydra)
+(use-package pretty-hydra)
 
 (pretty-hydra-define scimax-jupyter-org-hydra (:color blue :hint nil)
   ("Execute"
@@ -401,6 +446,7 @@ way, but it is."
 
 
 (jupyter-org-define-key (kbd "<f12>") #'scimax-jupyter-org-hydra/body)
+
 
 (provide 'scimax-jupyter)
 

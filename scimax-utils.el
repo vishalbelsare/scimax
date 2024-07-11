@@ -285,13 +285,13 @@ You can also try putting expressions in for formatting, e.g.:
 
 
 (defun scimax-github ()
-  "Open the Github repo."
+  "Open the GitHUB repo."
   (interactive)
   (browse-url "https://github.com/jkitchin/scimax"))
 
 
 (defun scimax-github-issues ()
-  "Open the Github repo issues page."
+  "Open the GitHUB repo issues page."
   (interactive)
   (browse-url "https://github.com/jkitchin/scimax/issues"))
 
@@ -300,9 +300,9 @@ You can also try putting expressions in for formatting, e.g.:
 ;; adapted from [[https://vmtyler.com/applescript-markdown-ready-screenshots/][AppleScript Markdown-Ready Screenshots | VMTyler.com]]
 (defun screenshot (&optional arg)
   "Take a screenshot and insert org link.
-with prefix arg, minimize emacs first.
-with double prefix arg, prompt for filename.
-Only works on Mac OSX."
+screencapture starts in window capture mode. press space bar to
+toggle it to mouse select. with prefix arg, minimize emacs first.
+with double prefix arg, prompt for filename. Only works on macOS."
   (interactive "P")
   (when arg
     (suspend-frame))
@@ -318,7 +318,7 @@ Only works on Mac OSX."
      (mapconcat
       'identity
       (list (format "set screenshotFilePath to \"%s\"" (expand-file-name fname "screenshots"))
-	    "do shell script \"screencapture \" & \"-s\" & \" \" & quoted form of screenshotFilePath"
+	    "do shell script \"screencapture \" & \"-i \" & \" \" & quoted form of screenshotFilePath"
 	    (concat "set result to \"[[./" fname "]]\"")
 	    "set the clipboard to result")
       "\n"))
@@ -338,8 +338,6 @@ Only works on Mac OSX."
 			    fname)))
     (org-redisplay-inline-images)
     (raise-frame)))
-
-(global-set-key (kbd "<f10>") 'screenshot)
 
 
 (defun pngpaste (&optional arg)
@@ -376,7 +374,7 @@ ARG prompt for filename, else generate one. images are saved in
   "Take a screenshot and insert org link.
 with prefix arg, minimize emacs first.
 With a double prefix, prompt for the filename.
-Only works on Mac OSX."
+Only works on macOS."
   (interactive "P")
   (when arg
     (suspend-frame))
@@ -404,7 +402,7 @@ Only works on Mac OSX."
 
     (insert (s-trim (shell-command-to-string cmd)))
 
-    (insert (format "\n\n[[./%s]]\n\n" fname))
+    (insert (format "\n#+attr_org: :width 600\n[[./%s]]\n\n" fname))
     (org-redisplay-inline-images)
     (raise-frame)))
 

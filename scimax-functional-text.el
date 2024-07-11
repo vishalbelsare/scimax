@@ -23,7 +23,7 @@
 ;; Hashtags: #MeToo
 ;; @Usernames
 ;;
-;; Github issues: issue #153
+;; GitHUB issues: issue #153
 ;; git commits:  commit 05fcea6
 ;; pull requests: pr #146  pull #146  or pull request #146
 
@@ -38,15 +38,14 @@
 REGEXP is the regular expression to match. It may have subgroups
 in it that are accessible in the ACTION. ACTION is either a list
 of sexps that are the body of a function, a lambda function, or a
-quoted symbol of a function. You can access the regexp subgroups
+quoted symbol of an interactive function. You can access the regexp subgroups
 in this function. PLIST is the rest of the arguments for
 `button-lock-set-button'. I like <return> to be active, so it is
 set by default. If you have a help-echo function it is also
 wrapped so that it too can have access to the match-data.
 "
-  (when (and (listp action) (functionp (cadr action)))
-    (setq action `((funcall-interactively ,action))))
-  ;; wrap the help-echo so match-data is available
+
+  ;; wrap the help-echo so match-data is available to functions later
   (when (and (plist-get plist :help-echo)
 	     (functionp (plist-get plist :help-echo)))
     (setq plist (plist-put plist :help-echo
@@ -62,26 +61,54 @@ wrapped so that it too can have access to the match-data.
 				  (while (not (looking-at ,regexp))
 				    (backward-char)) 
 				  (funcall ,(plist-get plist :help-echo) win buf pt)))))))
-  `(button-lock-register-global-button
-    ,regexp
-    ;; Suggested in https://github.com/rolandwalker/button-lock/issues/10
-    (lambda (event)
-      (interactive "e")
-      (let ((click-pos (posn-point (event-end event))))
-	(save-mark-and-excursion
-	 (save-match-data
-	   ;; This is clunky, but with grouping the properties may not extend to
-	   ;; the whole regexp, e.g. if you set properties on a subgroup.
-	   (goto-char (previous-single-property-change click-pos
-						       'button-lock))
-	   ;; now make sure we see it again to get the match-data
-	   (while (not (looking-at ,regexp))
-	     (backward-char))
-	   ,@action))))
-    ;; I like to press return on functional text to activate it.
-    :keyboard-binding "RET"
-    ;; These are the rest of the properties
-    ,@plist))
+  (let ((mouse-action `(lambda (event)
+			 (interactive "e")
+			 (let ((click-pos (posn-point (event-end event))))
+			   (save-mark-and-excursion
+			     (save-match-data
+			       ;; This is clunky, but with grouping the properties may not extend to
+			       ;; the whole regexp, e.g. if you set properties on a subgroup.
+			       (goto-char (or (previous-single-property-change click-pos
+									       'button-lock)
+					      (point-min)))
+			       ;; now make sure we see it again to get the match-data so it can be used in our functions
+			       (while (not (looking-at ,regexp))
+				 (backward-char))
+
+			       ;; Now we run the action
+			       ,(cond
+				 ((functionp action)
+				  `(,action))
+				 ;; it is probably a list of commands. wrap them in an interactive lambda
+				 (t
+				  `(progn
+				     ,@action))))))))
+	(kbd-action `(lambda ()
+		       (interactive)
+		       (save-excursion
+			 (while (not (looking-at ,regexp))
+			   (backward-char)))
+		       ,(cond
+			 ((functionp action)
+			  `(,action))
+			 ;; it is probably a list of commands. wrap them in an interactive lambda
+			 (t
+			  `(progn
+			     ,@action))))))
+    
+    `(progn
+       (button-lock-register-global-button
+	,regexp
+	;; Suggested in https://github.com/rolandwalker/button-lock/issues/10
+	,mouse-action
+	;; I like to press return on functional text to activate it.
+	:keyboard-binding "RET"
+	:keyboard-action ,kbd-action
+	;; These are the rest of the properties
+	,@plist)
+       ;; Toggle the mode, this seems to be important if you define this in a buffer.
+       (global-button-lock-mode -1)
+       (global-button-lock-mode 1))))
 
 
 (defun scimax-flyspell-ignore-buttons (orig-fun &rest args)
@@ -116,7 +143,7 @@ _c_: Contacts _m_: Mail
 
 ;; * Username handles
 ;;
-;; These may have many contexts, e.g. Twitter, Github, etc. The action on these
+;; These may have many contexts, e.g. Twitter, GitHUB, etc. The action on these
 ;;  is to launch a hydra menu to pick which action you want.
 ;;
 ;; @johnkitchin   (twitter)
@@ -176,7 +203,7 @@ _G_: GitLab     _l_: LinkedIn _r_: reddit  _t_: Twitter
 ;; They also could have different contexts, maybe Twitter, maybe Instagram, or
 ;; tags in org-mode, etc. so we also define a hydra for this.
 
-(defvar hashtag-regexp "\\(^\\|[[:space:]]\\|\\s(\\)\\(?2:#\\(?1:[[:alnum:]]+\\)\\)"
+(defvar hashtag-regexp "\\(^\\|[[:space:]]\\|\\s(\\)[^[]?\\(?2:#\\(?1:[[:alnum:]]+\\)\\)"
   "A regexp for a hashtag.
 The hashtag is in group 1.")
 
@@ -186,35 +213,41 @@ URL-PATTERN should have one %s in it which is replaced by the hashtag."
   (interactive)
   (browse-url (format url-pattern (match-string 1))))
 
+
 (defhydra hashtag (:color blue :hint nil)
   "
 @hashtag
-_f_: Facebook _i_: Instagram  _o_: org-tag  _t_: Twitter"
+_f_: Facebook _i_: Instagram  _o_: org-tag  _t_: Twitter _d_: org-db"
   ("i" (hashtag-open "https://www.instagram.com/explore/tags/%s/"))
   ("f" (hashtag-open "https://www.facebook.com/hashtag/%s"))
-  ("o" (org-tags-view nil (hashtag-at-p)))
+  ("o" (org-tags-view nil ((thing-at-point-looking-at hashtag-regexp))))
+  ("d" (org-db-hashtags))
   ("t" (hashtag-open "https://twitter.com/hashtag/%s")))
 
+
 (defun sf-activate-hashtags ()
+  "Activate scimax-functional-text hashtags.
+These are words that start with #."
   (interactive)
   (scimax-functional-text
    hashtag-regexp
-   'hashtag/body
+   hashtag/body
    :grouping 2
    :face (list 'link)
    :help-echo "Click me to open the hashtag."))
 
-;; * Github
-;; ** Github issues
+
+;; * GitHUB
+;; ** GitHUB issues
 ;; When the link in a git repo, make it open the issue.
 ;; issue #153 -> https://github.com/jkitchin/scimax/issues/153
 (defvar github-issue-regexp "issue\\s-+#\\(?1:[0-9]+\\)"
-  "Regexp for a github issue.")
+  "Regexp for a GitHUB issue.")
 
 (defhydra github-issue (:color blue :hint nil)
   "
 git issue
-_g_: Github"
+_g_: GitHUB"
   ("g" (lambda ()
 	 (interactive)
 	 (when-let (url (github-issue-at-p))
@@ -242,7 +275,7 @@ _g_: Github"
    github-issue-regexp
    'github-issue/body
    :face (list 'link)
-   :help-echo "Click me to open issue at Github."))
+   :help-echo "Click me to open issue at GitHUB."))
 
 ;; ** Github pull requests
 ;; pull request #146
@@ -271,7 +304,7 @@ _g_: Github"
 (defhydra github-pull-request (:color blue :hint nil)
   "
 git pull-request
-_g_: Github"
+_g_: GitHUB"
   ("g" (lambda ()
 	 (interactive)
 	 (when-let (url (pull-request-at-p))
@@ -283,9 +316,9 @@ _g_: Github"
    pull-request-regexp
    'github-pull-request/body
    :face (list 'link)
-   :help-echo "Click me to open pull request at Github."))
+   :help-echo "Click me to open pull request at GitHUB."))
 
-;; ** Github commits
+;; ** GitHUB commits
 ;; Open a commit in a browser.
 ;; commit 15b8adf1 -> https://github.com/jkitchin/scimax/commit/15b8adf191a252bb6a4c16c327f9c6fccc315a73
 ;; commit 05fcea6
@@ -311,7 +344,7 @@ _g_: Github"
 (defhydra git-commit (:color blue :hint nil)
   "
 commit
-_g_: Github _m_: Magit log
+_g_: GitHUB _m_: Magit log
 ^ ^         _c_: Magit commit"
   ("c" (magit-show-commit (third (github-commit-at-p))))
   ("g" (when-let ((data (github-commit-at-p))
@@ -326,7 +359,7 @@ _g_: Github _m_: Magit log
    github-commit-regexp
    'git-commit/body
    :face (list 'link)
-   :help-echo "Click me to open the commit on Github."))
+   :help-echo "Click me to open the commit on GitHUB."))
 
 (provide 'scimax-functional-text)
 
